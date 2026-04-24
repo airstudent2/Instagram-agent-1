@@ -1,0 +1,67 @@
+name: Instagram Auto-Reply Bot
+
+on:
+  schedule:
+    - cron: "0 * * * *" # Runs at the top of every hour
+  workflow_dispatch:
+    inputs:
+      post_url:
+        description: "Instagram Post/Reel URL"
+        required: false
+        type: string
+      keyword:
+        description: "Trigger Keyword (case-insensitive)"
+        required: false
+        type: string
+      reply_text:
+        description: "Public Reply Text"
+        required: false
+        type: string
+
+permissions:
+  contents: write # Required to push json files back to the repo
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches full history to ensure git rebase works properly
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Run Bot Script
+        env:
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          INPUT_POST_URL: ${{ inputs.post_url }}
+          INPUT_KEYWORD: ${{ inputs.keyword }}
+          INPUT_REPLY: ${{ inputs.reply_text }}
+        run: python agent.py
+
+      - name: Commit and Push State
+        run: |
+          # Configure Git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Stage the JSON files (ignoring errors if they are already up to date)
+          git add rules.json processed_comments.json || true
+          
+          # Check if there are changes to commit
+          if ! git diff-index --quiet HEAD; then
+            echo "Changes detected. Committing and pushing..."
+            git commit -m "chore: update bot state [skip ci]"
+            git pull --rebase origin main
+            git push origin main
+          else
+            echo "No new comments processed or rules added. Nothing to commit."
+          fi
